@@ -49,3 +49,7 @@ button.spinBtn.active {
     black 80%,
     transparent 100%);
 }
+
+.spinBtn {
+    margin-top: 10px;
+}

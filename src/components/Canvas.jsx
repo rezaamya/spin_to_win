@@ -7,7 +7,7 @@ const Canvas = ({ getCanvas, getContext /*, height, width*/ }) => {
     getCanvas(canvas);
     getContext(context);
   });
-  return <canvas ref={canvas} /*width={width} height={height}*/ />;
+  return <canvas id="board" ref={canvas} /*width={width} height={height}*/ />;
 };
 Canvas.propTypes = {
   getCanvas: PropTypes.func.isRequired,
