@@ -8,6 +8,8 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
   let context;
   const skeletonImage = new Image();
   skeletonImage.src = '/assets/head.png';
+  const winImage = new Image();
+  winImage.src = '/assets/win.png';
   const canvasHeight = 320;
   const rectangleHeight = 300;
   const rectangleWidth = 200;
@@ -18,6 +20,7 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
   const rectangleBorderRadius = 10;
   const logoWidth = rectangleWidth / 2;
   let logoHeight = logoWidth;
+  let winLogoHeight = logoWidth;
   let resizeId;
   let isRotating = false;
   let numberOfRectangles = 100;
@@ -28,6 +31,9 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
   let middleBottom = middleTop + rectangleHeight;
   const durationOfEachSpinFrameInterval = 10;
   const rectangleHighlightTransactionDuration = 50;
+  const winRate = 0.2;
+  const isWinner = false;
+  let currentJumpSize = 0;
   // let hoverAudio = new Audio('/assets/multimedia_rollover_037.mp3');
   // hoverAudio.load();
 
@@ -51,6 +57,11 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
           resolve(skeletonImage);
         };
       });
+      await new Promise((resolve) => {
+        winImage.onload = () => {
+          resolve(winImage);
+        };
+      });
 
       window.addEventListener('resize', () => {
         clearTimeout(resizeId);
@@ -71,6 +82,7 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
     color = '#000',
     yellowBorder = false,
     yellowBorderOpacity = 1,
+    winState = false,
   ) {
     let r = x + width;
     let b = y + height;
@@ -104,13 +116,23 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
       context.stroke();
     }
 
-    context.drawImage(
-      skeletonImage,
-      x + logoWidth / 2,
-      y + height / 2 - logoHeight / 2,
-      logoWidth,
-      logoHeight,
-    );
+    if (winState) {
+      context.drawImage(
+        winImage,
+        x + logoWidth / 2,
+        y + height / 2 - winLogoHeight / 2,
+        logoWidth,
+        winLogoHeight,
+      );
+    } else {
+      context.drawImage(
+        skeletonImage,
+        x + logoWidth / 2,
+        y + height / 2 - logoHeight / 2,
+        logoWidth,
+        logoHeight,
+      );
+    }
 
     return {
       x,
@@ -120,6 +142,9 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
       radius,
       lineWidth,
       color,
+      yellowBorder,
+      yellowBorderOpacity,
+      winState,
     };
   }
 
@@ -160,10 +185,41 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
     );
   };
 
+  function shuffleArray(array) {
+    let currentIndex = array.length,
+      randomIndex;
+
+    // While there remain elements to shuffle.
+    while (currentIndex != 0) {
+      // Pick a remaining element.
+      randomIndex = Math.floor(Math.random() * currentIndex);
+      currentIndex--;
+
+      // And swap it with the current element.
+      [array[currentIndex], array[randomIndex]] = [
+        array[randomIndex],
+        array[currentIndex],
+      ];
+    }
+
+    return array;
+  }
+
   const initDraw = async () => {
+    const numberOfWinners = numberOfRectangles * winRate;
+    let arrayOfWinnerAndLosers = [];
+    for (let index = 0; index < numberOfRectangles; index++) {
+      if (index < numberOfWinners) {
+        arrayOfWinnerAndLosers.push(true);
+      } else {
+        arrayOfWinnerAndLosers.push(false);
+      }
+    }
+    arrayOfWinnerAndLosers = shuffleArray(arrayOfWinnerAndLosers);
+
     rectangles = [];
     setRectangles([]);
-    for (let i = 0; i < numberOfRectangles * 3; i++) {
+    for (let i = 0; i < arrayOfWinnerAndLosers.length; i++) {
       let addedRectangle = await drawRoundRect(
         firstRectangleStoppedAtX + i * (rectangleWidth + rectangleMarginRight),
         rectangleMarginTop,
@@ -172,9 +228,12 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
         rectangleBorderRadius,
         rectangleBorderWidth,
         rectangleBorderColor,
+        false,
+        1,
+        arrayOfWinnerAndLosers[i],
       );
 
-      if (rectangles.length < numberOfRectangles * 3) {
+      if (rectangles.length < numberOfRectangles) {
         rectangles.push(addedRectangle);
       }
     }
@@ -193,14 +252,17 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
 
     if (!isRotating) {
       // In initialization, we should calculate the first left block position, based on middle-center block
-      numberOfRectangles = howManyRectangleIsFitInHalfOfScreen();
+      const numberOfRectanglesInHalfOfScreen =
+        howManyRectangleIsFitInHalfOfScreen();
       firstRectangleStoppedAtX =
         middleTop -
         rectangleWidth / 2 -
-        (numberOfRectangles * rectangleMarginRight +
-          numberOfRectangles * rectangleWidth);
+        (numberOfRectanglesInHalfOfScreen * rectangleMarginRight +
+          numberOfRectanglesInHalfOfScreen * rectangleWidth);
       logoHeight =
         (logoWidth / skeletonImage.naturalWidth) * skeletonImage.naturalHeight;
+      winLogoHeight =
+        (logoWidth / winImage.naturalWidth) * winImage.naturalHeight;
     }
 
     await clearAndDraw();
@@ -288,6 +350,7 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
           rectangleBorderColor,
           rectangle.yellowBorder,
           rectangle.yellowBorderOpacity,
+          rectangle.winState,
         );
       }
 
@@ -296,7 +359,6 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
   }
 
   async function spin() {
-    let jumpSize = rectangleWidth;
     let maxJump = rectangleWidth;
     let minJump = 1;
     spinEndsAt = new Date();
@@ -304,6 +366,7 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
 
     if (!intervalId) {
       clearInterval(intervalId);
+      currentJumpSize = 0;
       intervalId = setInterval(async () => {
         let currentLoopIsHappeningAt = new Date();
         const dateDifference =
@@ -319,16 +382,21 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
           // we have time to continue the spinning
           const percentRemainingOfSpinningTime = dateDifference / spinDuration;
 
-          let jump = parseInt(jumpSize * percentRemainingOfSpinningTime);
-          if (jump > maxJump) {
-            jump = maxJump;
+          if (0.5 < percentRemainingOfSpinningTime) {
+            currentJumpSize += minJump;
+          } else {
+            currentJumpSize -= minJump;
           }
-          if (jump < minJump) {
-            jump = minJump;
+
+          if (currentJumpSize > maxJump) {
+            currentJumpSize = maxJump;
+          }
+          if (currentJumpSize < minJump) {
+            currentJumpSize = minJump;
           }
 
           rectangles.map((value, index) => {
-            let newX = rectangles[index].x - jump;
+            let newX = rectangles[index].x - currentJumpSize;
 
             if (newX < middleTop && middleTop < newX + rectangleWidth) {
               rectangles[index].yellowBorder = true;
