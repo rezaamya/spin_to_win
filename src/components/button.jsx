@@ -1,10 +1,16 @@
-import { useState } from 'react';
+import { useContext } from 'react';
+import BoardContext from '../context/board-context';
 
-const Button = () => {
+const Button = ({ isSpinning }) => {
+  const boardContext = useContext(BoardContext);
   return (
     <>
       <div>
-        <button className="spinBtn" onClick={spin}>
+        <button
+          disabled={isSpinning ? 'disabled' : ''}
+          className={isSpinning ? 'spinBtn disabled' : 'spinBtn'}
+          onClick={spin}
+        >
           Spin my chance!
         </button>
       </div>
@@ -12,7 +18,9 @@ const Button = () => {
   );
 
   function spin() {
-    console.log('Spin');
+    if (!boardContext.isSpinning) {
+      boardContext.setSpin(true);
+    }
   }
 };
 

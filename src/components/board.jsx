@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react';
-
-import React from 'react';
+import { useEffect, useContext } from 'react';
+import BoardContext from '../context/board-context';
 import Canvas from './Canvas';
 
-const Board = () => {
-  const [firstInitialization, setFirstInitialization] = useState(true);
+const Board = ({ isSpinning, rectangles, setRectangles }) => {
+  const boardContext = useContext(BoardContext);
   let canvas;
   let context;
   const skeletonImage = new Image();
@@ -17,9 +16,27 @@ const Board = () => {
   const rectangleBorderColor = '#565f86';
   const rectangleBorderWidth = 1;
   const rectangleBorderRadius = 10;
+  const logoWidth = rectangleWidth / 2;
+  let logoHeight = logoWidth;
+  let resizeId;
+  let isRotating = false;
+  let numberOfRectangles = 100;
+  const spinDuration = 4000; //MS
+  let spinEndsAt = new Date();
+  let intervalId = undefined;
+  let middleTop = window.innerWidth / 2;
+  let middleBottom = middleTop + rectangleHeight;
+  const durationOfEachSpinFrameInterval = 10;
+  const rectangleHighlightTransactionDuration = 50;
+  // let hoverAudio = new Audio('/assets/multimedia_rollover_037.mp3');
+  // hoverAudio.load();
+
+  const hoverAudio = new Audio();
+  hoverAudio.src = '/assets/multimedia_rollover_037.mp3';
+  hoverAudio.preload = 'auto';
+  hoverAudio.load();
 
   let firstRectangleStoppedAtX = 0;
-  const rectangles = [];
 
   useEffect(() => {
     //initialize the board
@@ -28,30 +45,19 @@ const Board = () => {
 
   const initCanvas = () => {
     (async () => {
-      if (firstInitialization) {
-        //load skeleton image in memory to render faster
-        await new Promise((resolve) => {
-          skeletonImage.onload = () => {
-            resolve(skeletonImage);
-          };
-        });
+      //load skeleton image in memory to render faster
+      await new Promise((resolve) => {
+        skeletonImage.onload = () => {
+          resolve(skeletonImage);
+        };
+      });
 
-        window.addEventListener('resize', () => {
-          setTimeout(resizeHandler, 500);
-        });
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeId);
+        resizeId = setTimeout(resizeHandler, 500);
+      });
 
-        // In initialization, we should calculate the first left block position, based on middle-center block
-        const numberOfRectangles = howManyRectangleIsFitInHalfOfScreen();
-        firstRectangleStoppedAtX =
-          window.innerWidth / 2 -
-          rectangleWidth / 2 -
-          (numberOfRectangles * rectangleMarginRight +
-            numberOfRectangles * rectangleWidth);
-
-        await resizeHandler();
-        await draw();
-        setFirstInitialization(false);
-      }
+      await resizeHandler();
     })();
   };
 
@@ -63,6 +69,8 @@ const Board = () => {
     radius,
     lineWidth = 2,
     color = '#000',
+    yellowBorder = false,
+    yellowBorderOpacity = 1,
   ) {
     let r = x + width;
     let b = y + height;
@@ -80,27 +88,42 @@ const Board = () => {
     context.quadraticCurveTo(x, y, x + radius, y);
     context.stroke();
 
-    //calculate height of the image based of resized width
-    const imageNewWidthAfterResize = rectangleWidth / 2;
-    const imageNewHeightAfterResize =
-      (imageNewWidthAfterResize / skeletonImage.naturalWidth) *
-      skeletonImage.naturalHeight;
+    if (yellowBorder) {
+      context.beginPath();
+      context.strokeStyle = `rgba(255,232,0,${yellowBorderOpacity})`;
+      context.lineWidth = lineWidth / 2;
+      context.moveTo(x + radius, y + 0.5);
+      context.lineTo(r - radius, y + 0.5);
+      context.quadraticCurveTo(r, y, r, y + radius);
+      context.lineTo(r, y + height - radius + 0.5);
+      context.quadraticCurveTo(r, b, r - radius, b);
+      context.lineTo(x + radius, b + 0.5);
+      context.quadraticCurveTo(x, b, x, b - radius);
+      context.lineTo(x, y + radius + 0.5);
+      context.quadraticCurveTo(x, y, x + radius, y);
+      context.stroke();
+    }
 
     context.drawImage(
       skeletonImage,
-      x + imageNewWidthAfterResize / 2,
-      y + height / 2 - imageNewHeightAfterResize / 2,
-      imageNewWidthAfterResize,
-      imageNewHeightAfterResize,
+      x + logoWidth / 2,
+      y + height / 2 - logoHeight / 2,
+      logoWidth,
+      logoHeight,
     );
+
+    return {
+      x,
+      y,
+      width,
+      height,
+      radius,
+      lineWidth,
+      color,
+    };
   }
 
   async function drawMiddleArrow(lineWidth, color) {
-    const middleTop = window.innerWidth / 2;
-    const middleBottom = middleTop + rectangleHeight;
-    console.log('middleTop', middleTop);
-    console.log('middleBottom', middleBottom);
-
     // draw middle line
     context.beginPath();
     context.lineWidth = lineWidth;
@@ -120,7 +143,6 @@ const Board = () => {
     context.closePath();
 
     // Draw Triangle on bottom
-    console.log('middleBottom', middleBottom);
     context.beginPath();
     context.moveTo(middleTop - 8, canvasHeight);
     context.lineTo(middleTop + 8, canvasHeight);
@@ -138,9 +160,11 @@ const Board = () => {
     );
   };
 
-  const draw = async () => {
-    for (let i = 0; i < 1000; i++) {
-      await drawRoundRect(
+  const initDraw = async () => {
+    rectangles = [];
+    setRectangles([]);
+    for (let i = 0; i < numberOfRectangles * 3; i++) {
+      let addedRectangle = await drawRoundRect(
         firstRectangleStoppedAtX + i * (rectangleWidth + rectangleMarginRight),
         rectangleMarginTop,
         rectangleWidth,
@@ -149,39 +173,179 @@ const Board = () => {
         rectangleBorderWidth,
         rectangleBorderColor,
       );
+
+      if (rectangles.length < numberOfRectangles * 3) {
+        rectangles.push(addedRectangle);
+      }
     }
+
+    setRectangles(rectangles);
 
     await drawMiddleArrow(4, '#fff');
   };
 
   const resizeHandler = async () => {
+    setRectangles([]);
     canvas.current.width = window.innerWidth;
     canvas.current.height = canvasHeight;
+    middleTop = window.innerWidth / 2;
+    middleBottom = middleTop + rectangleHeight;
+
+    if (!isRotating) {
+      // In initialization, we should calculate the first left block position, based on middle-center block
+      numberOfRectangles = howManyRectangleIsFitInHalfOfScreen();
+      firstRectangleStoppedAtX =
+        middleTop -
+        rectangleWidth / 2 -
+        (numberOfRectangles * rectangleMarginRight +
+          numberOfRectangles * rectangleWidth);
+      logoHeight =
+        (logoWidth / skeletonImage.naturalWidth) * skeletonImage.naturalHeight;
+    }
+
     await clearAndDraw();
   };
 
   const clearAndDraw = async () => {
     if (context) {
       context.clearRect(0, 0, canvas.width, canvas.height);
-      await draw();
+      await initDraw();
     }
   };
 
-  const rectangle = () => {
-    return {
-      height: 300,
-      width: 200,
-      marginTop: 10,
-      marginRight: 4,
-      borderColor: '#565f86',
-      borderWidth: 1,
-      borderRadius: 10,
-    };
-  };
+  if (isSpinning) {
+    (async () => {
+      if (!isRotating) {
+        isRotating = true;
+        await spin();
+      }
+    })();
+  }
 
-  // function spin() {
-  //   // setSpin(true);
-  // }
+  async function removeRectangleHighlight(rectangle) {
+    if (rectangle.x < middleTop && middleTop < rectangle.x + rectangleWidth) {
+      //this rectangle is in middle and should stay highlighted
+      if (rectangle.timesThatIsStandingInMiddle < 100) {
+        rectangle.timesThatIsStandingInMiddle += 1;
+        setTimeout(() => {
+          removeRectangleHighlight(rectangle);
+        }, rectangleHighlightTransactionDuration);
+      }
+    } else if (rectangle.x + rectangleWidth < 0) {
+      // this rectangle is outside the view, and it's highlight should remove immediately
+      rectangle.yellowBorder = false;
+      rectangle.yellowBorderOpacity = 0;
+    } else {
+      //this rectangle is going outside, and it's highlight should remove slowly
+      rectangle.yellowBorderOpacity -= 0.05;
+      if (rectangle.yellowBorderOpacity >= 0) {
+        setTimeout(() => {
+          removeRectangleHighlight(rectangle);
+        }, rectangleHighlightTransactionDuration);
+      }
+    }
+
+    if (!isRotating) {
+      await drawForSpin();
+    }
+  }
+
+  async function shiftAndPush(array) {
+    const clone = [...array];
+    array.map((tempRectangle, tempIndex) => {
+      if (tempRectangle.x + rectangleWidth < 0) {
+        //this rectangle is outside of view, we move it to the end of the list
+        clone.shift();
+        tempRectangle.x =
+          clone[clone.length - 1].x + rectangleMarginRight + rectangleWidth;
+        tempRectangle.yellowBorder = undefined;
+        tempRectangle.yellowBorderOpacity = 0;
+        clone.push(tempRectangle);
+      }
+    });
+    return clone;
+  }
+
+  async function drawForSpin() {
+    context.clearRect(0, 0, canvas.current.width, canvas.current.height);
+
+    rectangles = await shiftAndPush(rectangles);
+
+    for await (const rectangle of rectangles) {
+      if (0 - rectangleWidth < rectangle.x && rectangle.x < window.innerWidth) {
+        //play sound
+        (() => {
+          hoverAudio.play();
+        })();
+
+        await drawRoundRect(
+          rectangle.x,
+          rectangleMarginTop,
+          rectangleWidth,
+          rectangleHeight,
+          rectangleBorderRadius,
+          rectangleBorderWidth,
+          rectangleBorderColor,
+          rectangle.yellowBorder,
+          rectangle.yellowBorderOpacity,
+        );
+      }
+
+      await drawMiddleArrow(4, '#fff');
+    }
+  }
+
+  async function spin() {
+    let jumpSize = rectangleWidth;
+    let maxJump = rectangleWidth;
+    let minJump = 1;
+    spinEndsAt = new Date();
+    spinEndsAt.setMilliseconds(spinEndsAt.getMilliseconds() + spinDuration);
+
+    if (!intervalId) {
+      clearInterval(intervalId);
+      intervalId = setInterval(async () => {
+        let currentLoopIsHappeningAt = new Date();
+        const dateDifference =
+          spinEndsAt.getTime() - currentLoopIsHappeningAt.getTime();
+        if (dateDifference < 0) {
+          // stop spin
+          isRotating = false;
+          clearInterval(intervalId);
+          boardContext.setSpin(false);
+
+          setRectangles(rectangles);
+        } else {
+          // we have time to continue the spinning
+          const percentRemainingOfSpinningTime = dateDifference / spinDuration;
+
+          let jump = parseInt(jumpSize * percentRemainingOfSpinningTime);
+          if (jump > maxJump) {
+            jump = maxJump;
+          }
+          if (jump < minJump) {
+            jump = minJump;
+          }
+
+          rectangles.map((value, index) => {
+            let newX = rectangles[index].x - jump;
+
+            if (newX < middleTop && middleTop < newX + rectangleWidth) {
+              rectangles[index].yellowBorder = true;
+              rectangles[index].yellowBorderOpacity = 1;
+              rectangles[index].timesThatIsStandingInMiddle = 0;
+              setTimeout(() => {
+                removeRectangleHighlight(rectangles[index]);
+              }, rectangleHighlightTransactionDuration);
+            }
+            rectangles[index].x = newX;
+          });
+
+          await drawForSpin();
+        }
+      }, durationOfEachSpinFrameInterval);
+    }
+  }
 
   const setContext = (receivedContext) => {
     context = receivedContext;
