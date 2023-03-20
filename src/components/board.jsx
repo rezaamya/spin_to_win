@@ -34,8 +34,9 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
   const winRate = 0.2;
   const isWinner = false;
   let currentJumpSize = 0;
-  // let hoverAudio = new Audio('/assets/multimedia_rollover_037.mp3');
-  // hoverAudio.load();
+  let shouldCalculateMaxDistanceMovement = false;
+  let maxDistanceMovementIsCalculated = false;
+  let maxDistanceWeWillMoveBeforeStop = 0;
 
   const hoverAudio = new Audio();
   hoverAudio.src = '/assets/multimedia_rollover_037.mp3';
@@ -72,18 +73,20 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
     })();
   };
 
-  async function drawRoundRect(
-    x,
-    y,
-    width,
-    height,
-    radius,
-    lineWidth = 2,
-    color = '#000',
-    yellowBorder = false,
-    yellowBorderOpacity = 1,
-    winState = false,
-  ) {
+  async function drawRoundRect(rectangle) {
+    let id = rectangle.id;
+    let x = rectangle.x;
+    let y = rectangle.y;
+    let width = rectangle.width;
+    let height = rectangle.height;
+    let color = rectangle.color;
+    let lineWidth = rectangle.lineWidth;
+    let radius = rectangle.radius;
+    let winState = rectangle.winState;
+    let yellowBorder = rectangle.yellowBorder;
+    let yellowBorderOpacity = rectangle.yellowBorderOpacity;
+    let willStandOnMiddle = rectangle.willStandOnMiddle;
+
     let r = x + width;
     let b = y + height;
     context.beginPath();
@@ -116,6 +119,40 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
       context.stroke();
     }
 
+    if (willStandOnMiddle) {
+      if (isWinner && !winState) {
+        // user is winner but rectangle will not show winState, so we need to force winState
+        for (let i = 0; i < rectangles.length; i++) {
+          if (rectangles[i].id === id) {
+            rectangles[i].winState = true;
+            break;
+          }
+        }
+        for (let i = 0; i < rectangles.length; i++) {
+          if (rectangles[i].id !== id && rectangles[i].winState) {
+            rectangles[i].winState = false;
+            break;
+          }
+        }
+        winState = true;
+      } else if (!isWinner && winState) {
+        // user is loser but rectangle will show winState, so we need to remove winState by force
+        for (let i = 0; i < rectangles.length; i++) {
+          if (rectangles[i].id === id) {
+            rectangles[i].winState = false;
+            break;
+          }
+        }
+        for (let i = 0; i < rectangles.length; i++) {
+          if (rectangles[i].id !== id && !rectangles[i].winState) {
+            rectangles[i].winState = true;
+            break;
+          }
+        }
+        winState = false;
+      }
+    }
+
     if (winState) {
       context.drawImage(
         winImage,
@@ -133,19 +170,6 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
         logoHeight,
       );
     }
-
-    return {
-      x,
-      y,
-      width,
-      height,
-      radius,
-      lineWidth,
-      color,
-      yellowBorder,
-      yellowBorderOpacity,
-      winState,
-    };
   }
 
   async function drawMiddleArrow(lineWidth, color) {
@@ -220,18 +244,23 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
     rectangles = [];
     setRectangles([]);
     for (let i = 0; i < arrayOfWinnerAndLosers.length; i++) {
-      let addedRectangle = await drawRoundRect(
-        firstRectangleStoppedAtX + i * (rectangleWidth + rectangleMarginRight),
-        rectangleMarginTop,
-        rectangleWidth,
-        rectangleHeight,
-        rectangleBorderRadius,
-        rectangleBorderWidth,
-        rectangleBorderColor,
-        false,
-        1,
-        arrayOfWinnerAndLosers[i],
-      );
+      let addedRectangle = {
+        id: i,
+        x:
+          firstRectangleStoppedAtX +
+          i * (rectangleWidth + rectangleMarginRight),
+        y: rectangleMarginTop,
+        width: rectangleWidth,
+        height: rectangleHeight,
+        radius: rectangleBorderRadius,
+        lineWidth: rectangleBorderWidth,
+        color: rectangleBorderColor,
+        yellowBorder: false,
+        yellowBorderOpacity: 1,
+        winState: arrayOfWinnerAndLosers[i],
+        willStandOnMiddle: false,
+      };
+      await drawRoundRect(addedRectangle);
 
       if (rectangles.length < numberOfRectangles) {
         rectangles.push(addedRectangle);
@@ -254,11 +283,12 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
       // In initialization, we should calculate the first left block position, based on middle-center block
       const numberOfRectanglesInHalfOfScreen =
         howManyRectangleIsFitInHalfOfScreen();
-      firstRectangleStoppedAtX =
+      firstRectangleStoppedAtX = parseInt(
         middleTop -
-        rectangleWidth / 2 -
-        (numberOfRectanglesInHalfOfScreen * rectangleMarginRight +
-          numberOfRectanglesInHalfOfScreen * rectangleWidth);
+          rectangleWidth / 2 -
+          (numberOfRectanglesInHalfOfScreen * rectangleMarginRight +
+            numberOfRectanglesInHalfOfScreen * rectangleWidth),
+      );
       logoHeight =
         (logoWidth / skeletonImage.naturalWidth) * skeletonImage.naturalHeight;
       winLogoHeight =
@@ -340,29 +370,30 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
           hoverAudio.play();
         })();
 
-        await drawRoundRect(
-          rectangle.x,
-          rectangleMarginTop,
-          rectangleWidth,
-          rectangleHeight,
-          rectangleBorderRadius,
-          rectangleBorderWidth,
-          rectangleBorderColor,
-          rectangle.yellowBorder,
-          rectangle.yellowBorderOpacity,
-          rectangle.winState,
-        );
+        await drawRoundRect(rectangle);
       }
 
       await drawMiddleArrow(4, '#fff');
     }
   }
 
+  async function removeStandOnMiddleMarks() {
+    rectangles.map((value, index) => {
+      if (value.willStandOnMiddle) {
+        rectangles[index].willStandOnMiddle = false;
+      }
+    });
+  }
+
   async function spin() {
+    removeStandOnMiddleMarks();
     let maxJump = rectangleWidth;
     let minJump = 1;
     spinEndsAt = new Date();
     spinEndsAt.setMilliseconds(spinEndsAt.getMilliseconds() + spinDuration);
+    shouldCalculateMaxDistanceMovement = false;
+    maxDistanceMovementIsCalculated = false;
+    maxDistanceWeWillMoveBeforeStop = 0;
 
     if (!intervalId) {
       clearInterval(intervalId);
@@ -386,6 +417,9 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
             currentJumpSize += minJump;
           } else {
             currentJumpSize -= minJump;
+            if (!maxDistanceMovementIsCalculated) {
+              shouldCalculateMaxDistanceMovement = true;
+            }
           }
 
           if (currentJumpSize > maxJump) {
@@ -393,6 +427,46 @@ const Board = ({ isSpinning, rectangles, setRectangles }) => {
           }
           if (currentJumpSize < minJump) {
             currentJumpSize = minJump;
+          }
+
+          if (shouldCalculateMaxDistanceMovement && currentJumpSize < 30) {
+            // spin is going to stop, we need to calculate the distance to final card
+            let tempCurrentJumpSize = currentJumpSize;
+            while (tempCurrentJumpSize > 0) {
+              if (tempCurrentJumpSize > maxJump) {
+                tempCurrentJumpSize = maxJump;
+              }
+              if (tempCurrentJumpSize < minJump) {
+                tempCurrentJumpSize = minJump;
+              }
+              maxDistanceWeWillMoveBeforeStop += tempCurrentJumpSize;
+              tempCurrentJumpSize -= 1;
+            }
+
+            let remainDistanceToStopOnMiddle =
+              middleTop + maxDistanceWeWillMoveBeforeStop;
+            let lastRectangle = rectangles[rectangles.length - 1];
+
+            if (remainDistanceToStopOnMiddle < lastRectangle.x) {
+              // movement will stop on current spin
+              // so the block that will stand in middle after stop, is in the current queue
+            } else {
+              remainDistanceToStopOnMiddle =
+                remainDistanceToStopOnMiddle % lastRectangle.x;
+            }
+
+            rectangles.map((value, index) => {
+              if (
+                value.x <= remainDistanceToStopOnMiddle &&
+                remainDistanceToStopOnMiddle <=
+                  value.x + rectangleWidth + rectangleMarginRight
+              ) {
+                rectangles[index].willStandOnMiddle = true;
+              }
+            });
+
+            shouldCalculateMaxDistanceMovement = false;
+            maxDistanceMovementIsCalculated = true;
           }
 
           rectangles.map((value, index) => {
